@@ -1,81 +1,16 @@
-import { sendOTPEmail } from "../config/email";
+import { deleteOTP, generateOTP, sendOTPEmail, sendWelcomeEmail } from "../config/email.js";
 import bcrypt from "bcryptjs";
-import { storeRefreshToken,generateTokenAndSetCookie } from "../utils/token";
-import User from "../models/user.model.js";
+import { storeRefreshToken,generateTokenAndSetCookie, generateRefreshToken, getRefreshToken, deleteRefreshToken } from "../utils/token.js";
+import User from "../models/users.js";
 
-const otpStore = new Map();
-
-const deleteOTP = (email) => {
-  otpStore.delete(email);
-  console.log(`✅ OTP deleted for: ${email}`);
-};
-
-export const verifyOTP = async ({email,otp}) => {
-  try {
-    const storedData = otpStore.get(email);
-    
-    if (!storedData) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'OTP expired or not found' 
-      });
-    }
-
-    if (Date.now() > storedData.expiresAt) {
-      otpStore.delete(email);
-      return res.status(400).json({ 
-        success: false, 
-        message: 'OTP has expired' 
-      });
-    }
-
-    if (storedData.otp !== otp) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Invalid OTP' 
-      });
-    }
-
-    const userData = storedData.userData;
-    userData.emailVerified = true;
-    userData.accountStatus = 'active';
-    
-    const newUser = new User(userData);
-    await newUser.save();
-
-    await deleteOTP(email);
-
-    console.log(`✅ User created: ${email}`);
-
-    // 7. Send welcome email (async)
-    sendWelcomeEmail(email, username).catch(err => 
-      console.error('Welcome email failed:', err)
-    );
-
-    // 8. Generate JWT tokens
-    await generateTokenAndSetCookie(newUser._id, newUser.email);
-    const refreshToken = generateRefreshToken(newUser._id);
-    await storeRefreshToken(newUser._id, refreshToken);
-    return {
-      success: true,
-      message: 'Registration successful',
-      user: {
-        id: newUser._id,
-        username: newUser.username,
-        email: newUser.email
-      },
-      accessToken,
-      refreshToken
-    };
-
-  } catch (error) {
-    console.error('OTP verification error:', error);
-  }
-};
+export const otpStore = new Map();
 
 export const registermanager = async (userData) => {
   try {
-    const { username, email, password, phone } = userData;
+    const { username, email, password, phone,fullname } = userData;
+    const nameParts = fullname.trim().split(' ');
+    const firstName = nameParts[0];
+    const lastName = nameParts.slice(1).join(' ') || firstName;
     
     const hashpassword = await bcrypt.hash(password, 10);
     const otp = generateOTP(); 
@@ -84,19 +19,21 @@ export const registermanager = async (userData) => {
       otp,
       expiresAt,
       userData: {
+        firstName,
+        lastName,
         username,
         email,
         password: hashpassword, 
         phone,
         emailVerified: false,
         authMethods: ['email'],
-        accountStatus: 'pending'
+        isActive: 'false'
       }
     });
     
     await sendOTPEmail(email, otp, username);
     
-    console.log(`✅ Registration initiated for ${email}`);
+    console.log(`Registration initiated for ${email}`);
     return {
       success: true,
       message: 'OTP sent to your email. Please verify to complete registration.',
@@ -110,7 +47,69 @@ export const registermanager = async (userData) => {
   }
 };
 
-export const loginManager = async ({ email, password }) => {
+export const verifyOTP = async ({email,otp,res}) => {
+  try {
+    const storedData = otpStore.get(email);
+    
+    if (!storedData) {
+      return{ 
+        success: false, 
+        message: 'OTP expired or not found' 
+      };
+    }
+
+    if (Date.now() > storedData.expiresAt) {
+      otpStore.delete(email);
+      return { 
+        success: false, 
+        message: 'OTP has expired' 
+      };
+    }
+
+    if (storedData.otp !== otp) {
+      return { 
+        success: false, 
+        message: 'Invalid OTP' 
+      };
+    }
+
+    const userData = storedData.userData;
+    userData.emailVerified = true;
+    userData.isActive = 'true';
+    
+    const newUser = new User(userData);
+    await newUser.save();
+
+    await deleteOTP(email);
+
+    console.log(` User created: ${email}`);
+    sendWelcomeEmail(email, userData.username).catch(err => 
+      console.error('Welcome email failed:', err)
+    );
+
+    await generateTokenAndSetCookie(newUser._id,res);
+
+    const refreshToken = generateRefreshToken(newUser._id);
+    await storeRefreshToken(newUser._id, refreshToken);
+    console.log("refresh token setup successfully");
+    
+    return {
+      success: true,
+      message: 'Registration successful',
+      user: {
+       // id: newUser._id,
+        username: newUser.username,
+        email: newUser.email
+      },
+    };
+
+  } catch (error) {
+    console.error('OTP verification error:', error);
+    throw new Error('Failed to process registration');
+  }
+};
+
+export const loginManager = async ({ email, password ,res}) => {
   try {
     const user = await User.findOne({ email });
     
@@ -119,14 +118,7 @@ export const loginManager = async ({ email, password }) => {
         success: false,
         message: 'Invalid email or password'
       };
-    }
-
-    if (user.accountStatus !== 'active') {
-      return {
-        success: false,
-        message: 'Account is not active. Please verify your email first.'
-      };
-    }
+    };
 
     if (!user.emailVerified) {
       return {
@@ -144,10 +136,11 @@ export const loginManager = async ({ email, password }) => {
       };
     }
 
-    await generateTokenAndSetCookie(user.id, user.email);
-    const refreshToken = generateRefreshToken(user.id);
-    await storeRefreshToken(user.id, refreshToken);
+    await generateTokenAndSetCookie(user._id, res);
+    const refreshToken = generateRefreshToken(user._id);
+    await storeRefreshToken(user._id, refreshToken);
 
+    user.isActive="true";
     user.lastLogin = new Date();
     await user.save();
 
@@ -161,10 +154,8 @@ export const loginManager = async ({ email, password }) => {
         username: user.username,
         email: user.email,
         phone: user.phone,
-        accountStatus: user.accountStatus
-      },
-      accessToken,
-      refreshToken
+        isActive: user.isActive
+      }
     };
 
   } catch (error) {
@@ -172,3 +163,58 @@ export const loginManager = async ({ email, password }) => {
     throw error;
   }
 };
+
+export const refreshManger = async(token,res)=>{
+  try{
+    const userId= token.userId;
+    if(!userId){
+      return {
+        message:"unauthorized"
+      }
+    };
+     const storedRefreshToken = await getRefreshToken(userId);
+    if (!storedRefreshToken) {
+      return {
+        success: false,
+        message: 'Refresh token not found. Please login again.',
+        code: 'REFRESH_TOKEN_NOT_FOUND'
+      };
+    };
+    let refreshDecoded;
+    try {
+    const  refreshDecoded = jwt.verify(
+        storedRefreshToken, 
+        process.env.REFRESH_TOKEN_SECRET
+      );
+    } catch (error) {
+      await deleteRefreshToken(userId);
+      return {
+        success: false,
+        message: 'Refresh token expired. Please login again.',
+        code: 'REFRESH_TOKEN_EXPIRED'
+      };
+    }
+    if (refreshDecoded.userId !== userId) {
+      return {
+        success: false,
+        message: 'Token mismatch'
+      };
+    };
+
+    await generateTokenAndSetCookie(newUser._id,res);
+    await deleteRefreshToken(userId);
+    console.log('previous token delted');
+    const refreshToken = generateRefreshToken(newUser._id);
+    await storeRefreshToken(newUser._id, refreshToken);
+
+   console.log(`✅ Tokens refreshed for user: ${userId}`);
+
+    return {
+      success: true,
+      message: 'Access token refreshed successfully'
+    };
+  }catch (error) {
+    console.error('refresh manager error:', error);
+    throw error;
+  }
+}

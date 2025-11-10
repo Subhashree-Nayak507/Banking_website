@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { REFRESH_TOKEN_PREFIX, REFRESH_TOKEN_EXPIRY } from '../config/constants.js';
-
+import redis from "../config/redis.js";
 
 export const generateTokenAndSetCookie = (userId, res) => {
 	const token = jwt.sign({ userId }, process.env.ACCESS_TOKEN_SECRET, {
@@ -13,20 +13,23 @@ export const generateTokenAndSetCookie = (userId, res) => {
 		sameSite: "strict", 
 		secure: process.env.NODE_ENV !== "development",
 	});
+  console.log("access tokne generted and set as cookie")
 };
 
 export const generateRefreshToken = (userId) => {
-  return jwt.sign(
+  const refresh= jwt.sign(
     { userId },
     process.env.REFRESH_TOKEN_SECRET,
-    { expiresIn: '7d' } // 7 days
+    { expiresIn: '1d' } // 7 days
   );
+  console.log("refresh tokn genertaed");
+  return refresh;
 };
 
 export const storeRefreshToken = async (userId, refreshToken) => {
   try {
     const key = `${REFRESH_TOKEN_PREFIX}${userId}`;
-    
+
     // Store token with automatic expiry (SETEX command)
     await redis.setex(key, REFRESH_TOKEN_EXPIRY, refreshToken);
     console.log(`✅ Refresh token stored in Redis for user: ${userId}`);
