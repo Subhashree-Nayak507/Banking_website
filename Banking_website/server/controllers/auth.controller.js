@@ -1,7 +1,9 @@
 import User from "../models/users.js";
-import { loginManager, registermanager, verifyOTP } from "../manager/auth.manager.js";
+import { loginManager, registermanager, verifyOTP, requestOTPForExistingUser,
+  verifyOTPForExistingUser,googleAuthManager  } from "../managers/auth.manager.js";
 import jwt from "jsonwebtoken";
 import { deleteRefreshToken } from "../utils/token.js";
+import { googleClient } from "../config/google.js";
 
 export const register = async (req, res) => {
   try {
@@ -64,7 +66,6 @@ export const verifyotp= async(req,res)=>{
     });
     }
 };
-
 
 export const logout= async(req,res)=>{
   try{
@@ -153,4 +154,111 @@ export const refreshToken = async(req,res)=>{
       message: 'Server error during refreshing token'
     });
     }
-}
+};
+
+export const initiateGoogleAuth = async (req, res) => {
+  try {
+    const authUrl = googleClient.generateAuthUrl({
+      scope: [
+        'email',
+        'profile'
+      ]
+    });
+    return res.redirect(authUrl);
+  } catch (error) {
+    console.error('Google auth initiation error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to initiate Google authentication'
+    });
+  }
+};
+
+export const googleAuthCallback= async(req,res)=>{
+  try{
+    const { code } = req.query;
+    if(!code){
+      return res.status(400).json({
+        message:"no code provided"
+      })
+    };
+
+    const { tokens} = await googleClient.getToken(code);
+
+     const ticket = await googleClient.verifyIdToken({
+      idToken: tokens.id_token,
+      audience: process.env.GOOGLE_CLIENT_ID
+    });
+
+    const payload = ticket.getPayload();
+    const googleUserData = {
+      googleId: payload.sub,
+      email: payload.email,
+      firstName: payload.given_name || 'User',
+      lastName: payload.family_name || '',
+      profilePic: payload.picture || ''
+    };
+
+    const result = await googleAuthManager({
+      ...googleUserData,
+      res
+    });
+    return res.status(200).json(result);
+  }catch (error) {
+    console.error('Google callback error:', error);
+    
+    return res.status(500).json({
+      messgae:"google auth failed"
+    })
+  }
+};
+
+export const requestOTPLogin = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      });
+    }
+    const existingUser = await User.findOne({ email });
+    
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'No account found with this email'
+      });
+    };
+    const result = await requestOTPForExistingUser({ email });
+    return res.status(200).json(result);
+  } catch (error) {
+    console.error('OTP request error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while requesting OTP'
+    });
+  }
+};
+
+export const verifyOTPLogin = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and OTP are required'
+      });
+    }
+
+    const result = await verifyOTPForExistingUser({ email, otp, res });
+    return res.status(200).json(result);
+
+  } catch (error) {
+    console.error('OTP login verification error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error during OTP verification'
+    });
+  }
+};

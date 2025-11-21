@@ -8,7 +8,7 @@ export const protectRoute = async (req, res, next) => {
 			return res.status(401).json({ error: "Unauthorized: No Token Provided" });
 		}
 
-		const decoded = jwt.verify(token, process.env.JWT_SECRET);
+		const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
 		if (!decoded) {
 			return res.status(401).json({ error: "Unauthorized: Invalid Token" });
 		}
@@ -23,7 +23,7 @@ export const protectRoute = async (req, res, next) => {
 		next();
 		
 	} catch (e) {
-		console.log("Error:", e);
+		console.log("Error in midddleware:", e);
 		return res.status(500).json({ error: "Internal Server Error" });
 	}
 };

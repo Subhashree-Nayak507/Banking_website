@@ -16,7 +16,10 @@ const userSchema = new mongoose.Schema({
     },
     password:{ 
         type:String,
-        required:true
+        required:function(){
+            return !this.googleId;
+        },
+
     },
     email:{
         type:String,
@@ -26,7 +29,6 @@ const userSchema = new mongoose.Schema({
     },
     phone:{
         type:Number,
-        required:true,
         unique:true
     },
     profilePic:{
@@ -35,7 +37,8 @@ const userSchema = new mongoose.Schema({
     },
     authMethods:{
         type: [String],
-        default: ["email", "google"]
+        default:[],
+        enum: ["email", "google"]
     },
     emailVerified:{
         type: Boolean,
@@ -44,10 +47,6 @@ const userSchema = new mongoose.Schema({
     googleId:{
         type: String,
         default: null
-    },
-    twofactorenabled:{
-        type: Boolean,
-        default: false
     },
     isActive:{
         type: Boolean,

@@ -1,6 +1,6 @@
 import { TransactionalEmailsApi, SendSmtpEmail } from '@getbrevo/brevo';
 import dotenv from 'dotenv';
-import { otpStore } from '../manager/auth.manager.js';
+import { otpStore } from '../managers/auth.manager.js';
 
 dotenv.config();
 
