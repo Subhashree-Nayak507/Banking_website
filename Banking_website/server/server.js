@@ -9,6 +9,8 @@ import { conn } from "./config/db.js";
 import redis from "./config/redis.js";
 import authRoutes from "./routes/auth.routes.js";
 import accountRoutes from "./routes/account.routes.js";
+import transactionRoutes from "./routes/transaction.routes.js";
+import beneficiariesRoutes from "./routes/beneficiary.routes.js";
 
 const app= express();
 app.use(express.json());
@@ -18,6 +20,8 @@ app.use(cookieParser());
 
 app.use("/api/v1/auth",authRoutes);
 app.use("/api/v1/account",accountRoutes);
+app.use("/api/v1/transaction",transactionRoutes);
+app.use("/api/v1/beneficiary",beneficiariesRoutes);
 
 const PORT=process.env.PORT || 5000;
 app.listen(PORT,async()=>{
